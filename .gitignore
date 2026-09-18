@@ -1,0 +1,16 @@
+# Dependencias
+node_modules/
+
+# Archivos de entorno y credenciales
+.env
+cert.pem
+key.pem
+
+# Logs de depuración
+*.log
+word_debug.log
+
+# Archivos temporales de Office y del sistema
+~$*
+.DS_Store
+Thumbs.db
