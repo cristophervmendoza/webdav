@@ -1,7 +1,7 @@
 {
   "name": "galileo-webdav",
   "version": "1.0.0",
-  "description": "Servidor WebDAV institucional para edición en vivo de plantillas Word en Galileo LMS",
+  "description": "Servidor WebDAV institucional para edición en vivo de plantillas Word en Galileo",
   "private": true,
   "main": "server.js",
   "scripts": {

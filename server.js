@@ -73,8 +73,10 @@ davServer.afterRequest(async (ctx, next) => {
 
       if (fs.existsSync(targetFile)) {
         const stats = fs.statSync(targetFile);
-        const updateRes = await pool.query(`
-          UPDATE documentos_plantillas
+
+        // 1. Verificar primero si corresponde a un documento de trabajo de un workspace
+        const trabajoRes = await pool.query(`
+          UPDATE documentos_trabajo
           SET size_bytes = $1,
               version = version + 1,
               updated_at = NOW()
@@ -82,8 +84,22 @@ davServer.afterRequest(async (ctx, next) => {
           RETURNING id, titulo, version;
         `, [stats.size, fname]);
 
-        if (updateRes.rows.length > 0) {
-          console.log(`[WebDAV Sync BD]: Plantilla #${updateRes.rows[0].id} ('${updateRes.rows[0].titulo}') guardada desde Word (v${updateRes.rows[0].version}, ${stats.size} bytes)`);
+        if (trabajoRes.rows.length > 0) {
+          console.log(`[WebDAV Sync BD]: Documento de Trabajo #${trabajoRes.rows[0].id} ('${trabajoRes.rows[0].titulo}') guardado desde Word (v${trabajoRes.rows[0].version}, ${stats.size} bytes)`);
+        } else {
+          // 2. Si no es de trabajo, actualizar plantilla maestra
+          const updateRes = await pool.query(`
+            UPDATE documentos_plantillas
+            SET size_bytes = $1,
+                version = version + 1,
+                updated_at = NOW()
+            WHERE object_key = $2 OR original_name = $2
+            RETURNING id, titulo, version;
+          `, [stats.size, fname]);
+
+          if (updateRes.rows.length > 0) {
+            console.log(`[WebDAV Sync BD]: Plantilla #${updateRes.rows[0].id} ('${updateRes.rows[0].titulo}') guardada desde Word (v${updateRes.rows[0].version}, ${stats.size} bytes)`);
+          }
         }
       }
     }
@@ -186,7 +202,7 @@ app.get('/health', async (req, res) => {
 
   res.json({
     status: 'ok',
-    service: 'Galileo WebDAV RFC 4918 Server for Word',
+    service: 'SAFRAV WebDAV RFC 4918 Server for Word',
     httpPort: HTTP_PORT,
     httpsPort: HTTPS_PORT,
     cors: 'enabled-all',
@@ -204,7 +220,7 @@ app.get('/', (req, res, next) => {
       <html lang="es">
       <head>
         <meta charset="utf-8">
-        <title>Galileo LMS - Servidor WebDAV RFC 4918</title>
+        <title>SAFRAV - Servidor WebDAV RFC 4918</title>
         <style>
           body { font-family: system-ui, sans-serif; padding: 40px; background: #0f172a; color: #f8fafc; }
           .card { background: #1e293b; padding: 24px; border-radius: 8px; border: 1px solid #334155; max-width: 650px; }
@@ -217,7 +233,7 @@ app.get('/', (req, res, next) => {
       <body>
         <div class="card">
           <span class="badge">WebDAV Clase 2 Activo</span>
-          <h1>Servidor WebDAV Institucional: Galileo LMS</h1>
+          <h1>Servidor WebDAV Institucional: SAFRAV</h1>
           <p>Servicio especializado para apertura y modificación directa de plantillas y documentos <b>Microsoft Word (.docx, .doc)</b> con persistencia atómica en PostgreSQL y sistema de archivos.</p>
           <p><b>Punto de Montaje WebDAV (HTTP):</b> <code>http://localhost:${HTTP_PORT}/webdav/plantillas/</code></p>
           <p><b>Punto de Montaje WebDAV (HTTPS):</b> <code>https://localhost:${HTTPS_PORT}/webdav/plantillas/</code></p>
@@ -295,7 +311,7 @@ app.use(webdav.extensions.express('/plantillas', davServer));
 const httpServer = http.createServer(app);
 httpServer.listen(HTTP_PORT, () => {
   console.log(`==============================================================`);
-  console.log(`  GALILEO LMS - SERVIDOR WEBDAV RFC 4918 (HTTP & HTTPS)`);
+  console.log(`  SAFRAV - SERVIDOR WEBDAV RFC 4918 (HTTP & HTTPS)`);
   console.log(`  WebDAV HTTP:         http://localhost:${HTTP_PORT}/webdav/plantillas/`);
   console.log(`  Directorio Físico:   ${STORAGE_DIR}`);
   console.log(`==============================================================`);
