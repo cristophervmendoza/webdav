@@ -3,6 +3,10 @@ node_modules/
 
 # Archivos de entorno y credenciales
 .env
+.env.*
+!.env.example
+*.pem
+*.key
 cert.pem
 key.pem
 

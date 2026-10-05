@@ -5,6 +5,7 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const { authentication, validateCertificate } = require('./security');
 const { Pool } = require('pg');
 // Parche en tiempo de ejecución para corregir bug de webdav-server v2 con cabeceras 'If' no etiquetadas de Word
 try {
@@ -21,7 +22,12 @@ require('dotenv').config();
 
 const HTTP_PORT = parseInt(process.env.PORT, 10) || 8003;
 const HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 8443;
-const STORAGE_DIR = path.resolve(__dirname, process.env.STORAGE_DIR || '../backend/uploads/plantillas');
+const STORAGE_DIR = path.resolve(__dirname, process.env.STORAGE_DIR || '../backend_safrav/uploads/plantillas');
+const certPath = process.env.SSL_CERT_PATH || path.join(__dirname, 'cert.pem');
+const keyPath = process.env.SSL_KEY_PATH || path.join(__dirname, 'key.pem');
+const tlsMode = process.env.TLS_MODE || 'direct';
+if (process.env.NODE_ENV === 'production') validateCertificate(certPath, process.env.SSL_DOMAIN);
+const requireCredentials = authentication();
 
 // Garantizar que la carpeta de almacenamiento de plantillas exista
 if (!fs.existsSync(STORAGE_DIR)) {
@@ -32,7 +38,7 @@ if (!fs.existsSync(STORAGE_DIR)) {
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'admin123',
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'galileo_data',
   port: parseInt(process.env.DB_PORT, 10) || 5432,
   max: 5,
@@ -80,7 +86,7 @@ davServer.afterRequest(async (ctx, next) => {
           SET size_bytes = $1,
               version = version + 1,
               updated_at = NOW()
-          WHERE object_key = $2 OR original_name = $2
+          WHERE object_key = $2
           RETURNING id, titulo, version;
         `, [stats.size, fname]);
 
@@ -93,7 +99,7 @@ davServer.afterRequest(async (ctx, next) => {
             SET size_bytes = $1,
                 version = version + 1,
                 updated_at = NOW()
-            WHERE object_key = $2 OR original_name = $2
+            WHERE object_key = $2
             RETURNING id, titulo, version;
           `, [stats.size, fname]);
 
@@ -119,10 +125,11 @@ const DEBUG_LOG_FILE = path.join(__dirname, 'word_debug.log');
 
 // 1. CORS TOTALMENTE HABILITADO Y ENCABEZADOS GLOBALES RFC 4918 PARA WORD
 app.use((req, res, next) => {
-  const origin = req.headers.origin || '*';
+  const origin = req.headers.origin;
+  if (origin && origin !== process.env.FRONTEND_URL) return res.status(403).end();
 
   // Permitir CORS absoluto e incondicional
-  res.setHeader('Access-Control-Allow-Origin', origin);
+  if (origin) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PROPFIND, PROPPATCH, LOCK, UNLOCK, HEAD, TRACE, COPY, MOVE, MKCOL');
   res.setHeader('Access-Control-Allow-Headers', '*');
@@ -149,13 +156,11 @@ app.use((req, res, next) => {
   
   res.on('finish', () => {
     const duration = Date.now() - start;
-    const logEntry = `[${reqTime}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${duration}ms)\n` +
+    const logEntry = `[${reqTime}] ${req.method} ${req.path} -> ${res.statusCode} (${duration}ms)\n` +
       `  User-Agent: ${req.headers['user-agent'] || 'none'}\n` +
-      `  Headers: ${JSON.stringify(req.headers)}\n` +
-      `  Res Headers: ${JSON.stringify(res.getHeaders ? res.getHeaders() : {})}\n` +
       `----------------------------------------------------------------------\n`;
     
-    console.log(`[WebDAV] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`);
+    console.log(`[WebDAV] ${req.method} ${req.path} -> ${res.statusCode} (${duration}ms)`);
     try {
       fs.appendFileSync(DEBUG_LOG_FILE, logEntry);
     } catch {}
@@ -165,7 +170,7 @@ app.use((req, res, next) => {
 });
 
 // 2. Soporte para verificación de permisos de edición de Microsoft Office / Word (Habilita transición de Vista Protegida a Modo Edición)
-app.all('/_api*', (req, res) => {
+app.all('/_api*', requireCredentials, (req, res) => {
   res.setHeader('Content-Type', 'application/json;odata=verbose;charset=utf-8');
   return res.status(200).json({
     d: {
@@ -197,16 +202,14 @@ app.get('/health', async (req, res) => {
     const r = await pool.query('SELECT NOW()');
     if (r.rows.length > 0) dbStatus = 'connected';
   } catch (e) {
-    dbStatus = 'error: ' + e.message;
+    dbStatus = 'error';
   }
 
   res.json({
-    status: 'ok',
+    status: dbStatus === 'connected' ? 'ok' : 'degraded',
     service: 'SAFRAV WebDAV RFC 4918 Server for Word',
     httpPort: HTTP_PORT,
     httpsPort: HTTPS_PORT,
-    cors: 'enabled-all',
-    storageDirectory: STORAGE_DIR,
     database: dbStatus,
     checkedAt: new Date().toISOString()
   });
@@ -300,8 +303,8 @@ const handleConditionalHeaders = (req, res, next) => {
   next();
 };
 
-app.use('/webdav/plantillas', handleConditionalHeaders);
-app.use('/plantillas', handleConditionalHeaders);
+app.use('/webdav/plantillas', requireCredentials, handleConditionalHeaders);
+app.use('/plantillas', requireCredentials, handleConditionalHeaders);
 
 // 7. Montar motor WebDAV en /webdav/plantillas y en /plantillas (rutas completas y canónicas)
 app.use(webdav.extensions.express('/webdav/plantillas', davServer));
@@ -309,7 +312,7 @@ app.use(webdav.extensions.express('/plantillas', davServer));
 
 // Iniciar servidor HTTP
 const httpServer = http.createServer(app);
-httpServer.listen(HTTP_PORT, () => {
+httpServer.listen(HTTP_PORT, process.env.HOST || '127.0.0.1', () => {
   console.log(`==============================================================`);
   console.log(`  SAFRAV - SERVIDOR WEBDAV RFC 4918 (HTTP & HTTPS)`);
   console.log(`  WebDAV HTTP:         http://localhost:${HTTP_PORT}/webdav/plantillas/`);
@@ -318,17 +321,15 @@ httpServer.listen(HTTP_PORT, () => {
 });
 
 // Iniciar servidor HTTPS si existen certificados SSL locales
-const certPath = path.join(__dirname, 'cert.pem');
-const keyPath = path.join(__dirname, 'key.pem');
 
-if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+if (tlsMode === 'direct' && fs.existsSync(certPath) && fs.existsSync(keyPath)) {
   try {
     const httpsOptions = {
       key: fs.readFileSync(keyPath),
       cert: fs.readFileSync(certPath)
     };
     const httpsServer = https.createServer(httpsOptions, app);
-    httpsServer.listen(HTTPS_PORT, () => {
+    httpsServer.listen(HTTPS_PORT, process.env.HOST || '127.0.0.1', () => {
       console.log(`  WebDAV HTTPS:        https://localhost:${HTTPS_PORT}/webdav/plantillas/`);
       console.log(`==============================================================`);
     });

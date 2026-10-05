@@ -1,20 +1,13 @@
-# WebDAV SAFRAV
+# WebDAV SAFRAV - memoria actual
 
-Actualizado: 2026-10-03. Revisión estática, sin pruebas con Word ni servidor iniciado.
+Actualizado2026-10-04. Produccion https://appsr003.vitorstream.shop; /opt/apps/projects/safrav/webdav; systemd safrav-webdav/usuario safrav/Node22.23.3 dedicado. HTTP HOST127.0.0.1 PORT8003, Nginx443/Cloudflare. STORAGE_DIR ../backend_safrav/uploads/plantillas compartida conbackend; BD safrav_prod/usuario tecnico sin superusuario.
 
-- Origin: https://github.com/cristophervmendoza/webdav.git; rama main; sin cambios previos observados.
-- Node/Express/webdav-server; server.js. npm start; HTTP PORT o 8003; HTTPS_PORT o 8443 si hay certificados.
-- Almacenamiento mediante STORAGE_DIR; fallback ../backend/uploads/plantillas no coincide con ../backend_safrav/uploads/plantillas del workspace. Confirmar configuración efectiva antes de cambiarlo; no se leyó .env.
-- server.js aplica parche runtime a IfParser de webdav-server y sincroniza guardados mediante afterRequest/PostgreSQL. README describe apertura ms-word:ofe|u| y métodos WebDAV. Descripción documental no es prueba ejecutada.
+server.js carga SSL_DOMAIN,SSL_CERT_PATH,SSL_KEY_PATH,TLS_MODE. Proxy: certificado wildcard deorigenCloudflare /etc/ssl/certs/appsr001-vitorstream-origin.crt y clave soloNginx /etc/ssl/private/appsr001-vitorstream-origin.key. security.validateCertificate comprueba hostname/vigencia al iniciar produccion; SSL_DOMAIN appsr003.vitorstream.shop. Cliente recibe certificado publicoCloudflare; nunca desactivar verificacionTLS.
 
-## Próximo paso y mejoras
+security.authentication exige WEBDAV_USERNAME/PASSWORD >=24caracteres enproduccion para montajes y/_api, incluida cache304. Credencial tecnica privada solooperadores; Word puede pedirla. Internamente motorNoAuth detrasmiddleware, no accesoanonimo publico. Proxima mejora autenticacion individual ypermisos porarchivo; no afirmar RBACdeusuario enDAV. OPTIONSraiz/health noentreganarchivos.
 
-Confirmar carpeta de plantillas; probar apertura, LOCK/UNLOCK, PUT y sincronización de versión en Word con documento de prueba. Revisar autenticación/permisos y paridad entre README/configuración real antes de exposición externa. Preservar parche IfParser y compatibilidad Word hasta contar con prueba de regresión; no borrar documentos ni modificar datos reales para verificar memoria.
+Corregidos storage fallbackerroneo, passwordBDhardcode, CORS abierto, logs cabecerasSecretas, updatepororiginal_name ambiguo: actualizacionsize/version usaobject_key exacta. No se registran Authorization/Cookie/query. Preservado patchIfParser/Lock-Token/ETag/montajes /webdav/plantillas y/plantillas.
 
-## Registro y cierre
+Probado:node--test test-security.js2casos; produccionHTTPS PUT GET ETag304 PROPFIND207 LOCK PUTconIfWord UNLOCK204, anonimo/incorrecto401, originajeno403. Fixture eliminada. SSLdominio/vigencia coincide y dominio ajeno rechazado; puertoSSLpublico validado sinignoreHTTPSErrors. SaludBDconnected. Logs privados backend/storage/despliegue/webdav-public.log; sin pruebaWordescritorio (pendiente).
 
-- 2026-10-03: memoria e instrucciones creadas; inspección de manifiesto/README/entrada/Git. No se corrigieron bugs ni se ejecutaron pruebas funcionales. Publicación documental: comprobar commit/push en Git.
-- Cada tarea: registrar causa, archivo/función de solución, validación real, mejoras pendientes, siguiente paso y commit/rama/push. Stage explícito, commit y push a origin después de validar; sin force ni cambios ajenos. Registrar bloqueos. No guardar secretos; archivar registros extensos en docs/HISTORIAL.md.
-
-## Identidad y publicación
-2026-10-03: bloqueo de identidad resuelto con datos confirmados por el usuario. Git configurado localmente: cristophervmendoza <cristopher.v.mendoza@gmail.com>. Documentación validada con git diff --cached --check; publicación mediante commit y push a origin. Consultar Git para hash y estado remoto. Cambios funcionales previos excluidos del commit documental.
+Git main/origin github.com/cristophervmendoza/webdav; commit/push explicito despuesvalidacion y actualizarbrain. No secretos/.env/keycert/docs reales enGit; consultarHEAD/origin para hash. Guiaoperacion backend/deploy/README.md. Historico94f6675 solo documentaba revisionestatica; sustituido estadoactual probado.
